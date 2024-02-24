@@ -1,0 +1,487 @@
+---
+title: "R Notebook"
+output:
+  html_document:
+    df_print: paged
+---
+
+```{r echo = FALSE, warning=FALSE, message=FALSE}
+rm(list=(ls()))
+
+library(plyr)
+library(tidyr)
+library(dplyr)
+library(ggplot2)
+library(car)
+library(Hmisc)  
+library(lmerTest) 
+library(broom)
+library(cowplot)
+library(ridge)
+library(lmridge)
+library(rtf)
+
+rewrite = 0
+```
+
+``` {r}
+# Read data
+if (rewrite == 1) {
+  sum1 = read.csv("../../1_data/3_results/2_rankings/data_summary.csv")
+  sum2 = read.csv("../../1_data/3_results/2_rankings/data_summary_2.csv")
+
+  AllData = rbind(sum1, sum2)
+  AllData = AllData[,-c(1)]
+
+  AllData = AllData[order(AllData[,3]),]
+
+  AllData = data.frame(AllData)
+
+  write.csv(AllData, "../../1_data/3_results/2_rankings/AllData.csv",row.names=F)
+  
+} else if (rewrite == 0) {
+  AllData = read.csv("../../1_data/3_results/2_rankings/AllData.csv")
+}
+
+```
+
+``` {r}
+
+NewData <- AllData %>% distinct(stimulus, .keep_all = TRUE)
+NewData$stimulus <- factor(NewData$stimulus, levels = NewData$stimulus)
+
+# bin the 196 images
+FallDataset <- subset(NewData, meanResponse < 0.375)
+StandDataset <- subset(NewData, meanResponse >= 0.625)
+AmbiDataset <- subset(NewData, meanResponse >= 0.375 & meanResponse < 0.625)
+  
+if (rewrite == 1) {
+  write.csv(StandDataset, "../../1_data/3_results/2_rankings/FallData.csv",row.names=F)
+  write.csv(FallDataset, "../../1_data/3_results/2_rankings/StandData.csv",row.names=F)
+  write.csv(AmbiDataset, "../../1_data/3_results/2_rankings/AmbiData.csv",row.names=F)
+}
+
+```
+
+``` {r}
+# sort images according to subcategory
+
+NewData2 <- AllData %>% distinct(stimulus, .keep_all = TRUE)
+
+percent_stand = NULL
+class = NULL
+
+for (i in 1:nrow(NewData2)) {
+  
+  #FALL
+  if (NewData2[i,"meanResponse"] < 0.025) {
+    percent_stand = rbind(percent_stand, "0")
+    class = rbind(class, "Fall")
+  } else if (NewData2[i,"meanResponse"] >= 0.025 && NewData2[i,"meanResponse"] < 0.075) {
+    percent_stand = rbind(percent_stand, "5")
+    class = rbind(class, "Fall")
+  } else if (NewData2[i,"meanResponse"] >= 0.075 && NewData2[i,"meanResponse"] < 0.125) {
+    percent_stand = rbind(percent_stand, "10")
+    class = rbind(class, "Fall")
+  } else if (NewData2[i,"meanResponse"] >= 0.125 && NewData2[i,"meanResponse"] < 0.175) {
+    percent_stand = rbind(percent_stand, "15")
+    class = rbind(class, "Fall")
+  } else if (NewData2[i,"meanResponse"] >= 0.175 && NewData2[i,"meanResponse"] < 0.225) {
+    percent_stand = rbind(percent_stand, "20")
+    class = rbind(class, "Fall")
+  } else if (NewData2[i,"meanResponse"] >= 0.225 && NewData2[i,"meanResponse"] < 0.275) {
+    percent_stand = rbind(percent_stand, "25")
+    class = rbind(class, "Fall")
+  } else if (NewData2[i,"meanResponse"] >= 0.275 && NewData2[i,"meanResponse"] < 0.325) {
+    percent_stand = rbind(percent_stand, "30")
+    class = rbind(class, "Fall")
+  
+  # AMBIGUOUS
+  } else if (NewData2[i,"meanResponse"] >= 0.325 && NewData2[i,"meanResponse"] < 0.375) {
+    percent_stand = rbind(percent_stand, "35")
+    class = rbind(class, "Ambi")
+  } else if (NewData2[i,"meanResponse"] >= 0.375 && NewData2[i,"meanResponse"] < 0.425) {
+    percent_stand = rbind(percent_stand, "40")
+    class = rbind(class, "Ambi")
+  } else if (NewData2[i,"meanResponse"] >= 0.425 && NewData2[i,"meanResponse"] < 0.475) {
+    percent_stand = rbind(percent_stand, "45")
+    class = rbind(class, "Ambi")
+  } else if (NewData2[i,"meanResponse"] >= 0.475 && NewData2[i,"meanResponse"] < 0.525) {
+    percent_stand = rbind(percent_stand, "50")
+    class = rbind(class, "Ambi")
+  } else if (NewData[i,"meanResponse"] >= 0.525 && NewData[i,"meanResponse"] < 0.575) {
+    percent_stand = rbind(percent_stand, "55")
+    class = rbind(class, "Ambi")
+  } else if (NewData2[i,"meanResponse"] >= 0.575 && NewData2[i,"meanResponse"] < 0.625) {
+    percent_stand = rbind(percent_stand, "60")
+    class = rbind(class, "Ambi")
+  } else if (NewData2[i,"meanResponse"] >= 0.625 && NewData2[i,"meanResponse"] < 0.675) {
+    percent_stand = rbind(percent_stand, "65")
+    class = rbind(class, "Ambi")
+  
+  #STAND
+  } else if (NewData2[i,"meanResponse"] >= 0.675 && NewData2[i,"meanResponse"] < 0.725) {
+    percent_stand = rbind(percent_stand, "70")
+    class = rbind(class, "Stand")
+  } else if (NewData2[i,"meanResponse"] >= 0.725 && NewData2[i,"meanResponse"] < 0.775) {
+    percent_stand = rbind(percent_stand, "75")
+    class = rbind(class, "Stand")
+  } else if (NewData2[i,"meanResponse"] >= 0.775 && NewData2[i,"meanResponse"] < 0.825) {
+    percent_stand = rbind(percent_stand, "80")
+    class = rbind(class, "Stand")
+  } else if (NewData2[i,"meanResponse"] >= 0.825 && NewData2[i,"meanResponse"] < 0.875) {
+    percent_stand = rbind(percent_stand, "85")
+    class = rbind(class, "Stand")
+  } else if (NewData2[i,"meanResponse"] >= 0.875 && NewData2[i,"meanResponse"] < 0.925) {
+    percent_stand = rbind(percent_stand, "90")
+    class = rbind(class, "Stand")
+  } else if (NewData2[i,"meanResponse"] >= 0.925 && NewData2[i,"meanResponse"] < 0.975) {
+    percent_stand = rbind(percent_stand, "95")
+    class = rbind(class, "Stand")
+  } else if (NewData2[i,"meanResponse"] >= 0.975) {
+    percent_stand = rbind(percent_stand, "100")
+    class = rbind(class, "Stand")
+  }
+}
+
+NewData2 = cbind(NewData2, percent_stand)
+NewData2 = cbind(NewData2, class)
+
+```
+
+``` {r}
+# refine categories
+
+percent_stand2 = NULL
+stim = NULL
+class = NULL
+thisData = NULL
+
+# to remove extra images
+flag0 = 0
+flag5 = 0
+flag10 = 0
+flag15 = 0
+flag20 = 0
+flag25 = 0
+flag30 = 0
+flag35 = 0
+
+for (i in 1:nrow(NewData2)) {
+  
+  #FALL
+  if (NewData2[i,"meanResponse"] == 0 && flag0 != 2) { # 2/2
+    percent_stand2 = rbind(percent_stand2, "0")
+    stim = rbind(stim, NewData2[i,"stimulus"])
+    class = rbind(class, "Fall")
+    flag0 = flag0 + 1
+  } else if (NewData2[i,"meanResponse"] == 0.05 && flag5 != 5) { # 5/5
+    percent_stand2 = rbind(percent_stand2, "5")
+    stim = rbind(stim, NewData2[i,"stimulus"])
+    class = rbind(class, "Fall")
+    flag5 = flag5 + 1
+  } else if (NewData2[i,"meanResponse"] == 0.1 && flag10 != 5) { # 5/5
+    percent_stand2 = rbind(percent_stand2, "10")
+    stim = rbind(stim, NewData2[i,"stimulus"])
+    class = rbind(class, "Fall")
+    flag10 = flag10 + 1
+  } else if (NewData2[i,"meanResponse"] == 0.15 && flag15 != 4) { # 4/4
+    percent_stand2 = rbind(percent_stand2, "15")
+    stim = rbind(stim, NewData2[i,"stimulus"])
+    class = rbind(class, "Fall")
+    flag15 = flag15 + 1
+  } else if (NewData2[i,"meanResponse"] == 0.2 && flag20 != 4) { # 4/4
+    percent_stand2 = rbind(percent_stand2, "20")
+    stim = rbind(stim, NewData2[i,"stimulus"])
+    class = rbind(class, "Fall")
+    flag20 = flag20 + 1
+  } else if (NewData2[i,"meanResponse"] == 0.25 && flag25 != 4) { #4/4
+    percent_stand2 = rbind(percent_stand2, "25")
+    stim = rbind(stim, NewData2[i,"stimulus"])
+    class = rbind(class, "Fall")
+    flag25 = flag25 + 1
+  } else if (NewData2[i,"meanResponse"] == 0.3 && flag30 != 3) { # 3/3
+    percent_stand2 = rbind(percent_stand2, "30")
+    stim = rbind(stim, NewData2[i,"stimulus"])
+    class = rbind(class, "Fall")
+    flag30 = flag30 + 1
+    
+  # AMBIGUOUS
+  } else if (NewData2[i,"meanResponse"] == 0.35 && flag35 != 2) { # 2/2
+    percent_stand2 = rbind(percent_stand2, "35")
+    stim = rbind(stim, NewData2[i,"stimulus"])
+    class = rbind(class, "Ambi")
+    flag35 = flag35 + 1
+  } else if (NewData2[i,"meanResponse"] >= 0.375 && NewData2[i,"meanResponse"] < 0.425) { # 3/3
+    percent_stand2 = rbind(percent_stand2, "40")
+    stim = rbind(stim, NewData2[i,"stimulus"])
+    class = rbind(class, "Ambi")
+  } else if (NewData2[i,"meanResponse"] >= 0.450 && NewData2[i,"meanResponse"] < 0.475) { # 5/5
+    percent_stand2 = rbind(percent_stand2, "45")
+    stim = rbind(stim, NewData2[i,"stimulus"])
+    class = rbind(class, "Ambi")
+  } else if (NewData2[i,"meanResponse"] > 0.475 && NewData2[i,"meanResponse"] < 0.525) { #6/6
+    percent_stand2 = rbind(percent_stand2, "50")
+    stim = rbind(stim, NewData2[i,"stimulus"])
+    class = rbind(class, "Ambi")
+  } else if (NewData2[i,"meanResponse"] >= 0.525 && NewData2[i,"meanResponse"] < 0.575) { # 5/5
+    percent_stand2 = rbind(percent_stand2, "55")
+    stim = rbind(stim, NewData2[i,"stimulus"])
+    class = rbind(class, "Ambi")
+  } else if (NewData2[i,"meanResponse"] == 0.600) { # 3/3
+    percent_stand2 = rbind(percent_stand2, "60")
+    stim = rbind(stim, NewData2[i,"stimulus"])
+    class = rbind(class, "Ambi")
+  } else if (NewData2[i,"meanResponse"] >= 0.625 && NewData2[i,"meanResponse"] < 0.675) { # 2/2
+    percent_stand2 = rbind(percent_stand2, "65")
+    stim = rbind(stim, NewData2[i,"stimulus"])
+    class = rbind(class, "Ambi")
+  
+  #STAND
+  } else if (NewData2[i,"meanResponse"] >= 0.675 && NewData2[i,"meanResponse"] < 0.725) { # 3/3, manually remove easy-vcom=4-126.png and hard-vcom=4-146.png
+    percent_stand2 = rbind(percent_stand2, "70")
+    stim = rbind(stim, NewData2[i,"stimulus"])
+    class = rbind(class, "Stand")
+  } else if (NewData2[i,"meanResponse"] >= 0.725 && NewData2[i,"meanResponse"] < 0.775) { # 4/4
+    percent_stand2 = rbind(percent_stand2, "75")
+    stim = rbind(stim, NewData2[i,"stimulus"])
+    class = rbind(class, "Stand")
+  } else if (NewData2[i,"meanResponse"] >= 0.789 && NewData2[i,"meanResponse"] < 0.81) { # 4/4
+    percent_stand2 = rbind(percent_stand2, "80")
+    stim = rbind(stim, NewData2[i,"stimulus"])
+    class = rbind(class, "Stand")
+  } else if (NewData2[i,"meanResponse"] >= 0.825 && NewData2[i,"meanResponse"] < 0.875) { # 4/4, manually remove easy-vcom=4-4.png and easy-233.png
+    percent_stand2 = rbind(percent_stand2, "85")
+    stim = rbind(stim, NewData2[i,"stimulus"])
+    class = rbind(class, "Stand")
+  } else if (NewData2[i,"meanResponse"] >= 0.875 && NewData2[i,"meanResponse"] < 0.925) { # 5/5
+    percent_stand2 = rbind(percent_stand2, "90")
+    stim = rbind(stim, NewData2[i,"stimulus"])
+    class = rbind(class, "Stand")
+  } else if (NewData2[i,"meanResponse"] >= 0.925 && NewData2[i,"meanResponse"] < 0.975) { # 5/5, manually remove easy-280.png
+    percent_stand2 = rbind(percent_stand2, "95")
+    stim = rbind(stim, NewData2[i,"stimulus"])
+    class = rbind(class, "Stand")
+  } else if (NewData2[i,"meanResponse"] >= 0.975) { # 2/2
+    percent_stand2 = rbind(percent_stand2, "100")
+    stim = rbind(stim, NewData2[i,"stimulus"])
+    class = rbind(class, "Stand")
+  }
+}
+
+thisData = data.frame(cbind(stim, percent_stand2, class))
+
+# remove extraneous values
+thisData <- thisData[-c(30,55,56,68,69,79),]
+
+```
+
+# Sort Images into Batches
+
+``` {r}
+
+thisData = data.frame(thisData)
+
+fall_subset = subset(thisData, X3=="Fall")
+stand_subset = subset(thisData, X3=="Stand")
+ambi_subset = subset(thisData, X3=="Ambi")
+
+# shuffle subsets
+set.seed(872436) # Set seed
+fall_subset <- fall_subset[sample(nrow(fall_subset)),]
+stand_subset <- stand_subset[sample(nrow(stand_subset)),]
+ambi_subset <- ambi_subset[sample(nrow(ambi_subset)),]
+
+BatchA = NULL
+BatchB = NULL
+BatchC = NULL
+BatchD = NULL
+
+# 10 + 9 +  4 + 4 = 27 Fall
+#  4 + 4 + 10 + 9 = 27 Stand
+#  6 + 7 +  6 + 7 = 26 Ambi
+
+# Batches A and B (unstable)
+  # select 9-10 Fall images, 6-7 Ambiguous images, and 4 Stand images from randomly shuffled subsets
+# Batches C and D (stable)
+  # select 9-10 Stand images, 6-7 Ambiguous images, and 4 Fall images from randomly shuffled subsets
+
+for (i in 1:27) {
+  
+  if (i <= 10) { # 10
+    BatchA <- rbind(BatchA, fall_subset[i,]) 
+  } else if (i >= 11 && i <= 19) { # 9
+    BatchB <- rbind(BatchB, fall_subset[i,])
+  } else if (i >= 20 && i <= 23) { # 4
+    BatchC <- rbind(BatchC, fall_subset[i,])
+  } else if (i >= 24 && i <= 27) { # 4
+    BatchD <- rbind(BatchD, fall_subset[i,])
+  }
+
+  if (i <= 4) { # 4
+    BatchA <- rbind(BatchA, stand_subset[i,]) 
+  } else if (i >= 5 && i <= 8) { # 4
+    BatchB <- rbind(BatchB, stand_subset[i,])
+  } else if (i >= 9 && i <= 18) { # 10
+    BatchC <- rbind(BatchC, stand_subset[i,])
+  } else if (i >= 19 && i <= 27) { # 9
+    BatchD <- rbind(BatchD, stand_subset[i,])
+  }
+  
+  if (i <= 6) { # 6
+    BatchA <- rbind(BatchA, ambi_subset[i,]) 
+  } else if (i >= 7 && i <= 13) { # 7
+    BatchB <- rbind(BatchB, ambi_subset[i,])
+  } else if (i >= 14 && i <= 19) { # 6
+    BatchC <- rbind(BatchC, ambi_subset[i,])
+  } else if (i >= 20 && i < 27) { # 7
+    BatchD <- rbind(BatchD, ambi_subset[i,])
+  }
+  
+}
+
+```
+
+``` {r}
+
+MyData = NULL
+
+batch <- c(rep("A",20), rep("B",20), rep("C",20), rep("D",20))
+batch_type <- c(rep("unstable",40), rep("stable",40))
+
+MyData = rbind(BatchA, BatchB, BatchC, BatchD)
+colnames(MyData) <- c("towers","percent_stand","tower_type")
+
+corr_choice = c()
+
+for (j in 1:80) {
+  if (MyData[j, "percent_stand"] < 50) {
+    corr_choice <- c(corr_choice, "stand")
+  } else if (MyData[j, "percent_stand"] > 50) {
+    corr_choice <- c(corr_choice, "fall")
+  } else if (MyData[j, "towers"] == "hard-vcom=3-139.png" | MyData[j, "towers"] == "hard-vcom=3-143.png" | MyData[j, "towers"] == "hard-371.png") { #manually set values for 50% trials
+    corr_choice <- c(corr_choice, "stand")
+  } else if (MyData[j, "towers"] == "easy-vcom=4-19.png" | MyData[j, "towers"] == "hard-vcom=4-130.png" | MyData[j, "towers"] == "hard-vcom=3-145.png") {
+    corr_choice <- c(corr_choice, "fall")
+  }
+}
+
+# create itis and shuffle list
+iti <- c(rep(2,80))
+  
+MyData = cbind(MyData, batch, batch_type, corr_choice, iti)
+
+for (img in 1:80) {
+  MyData[img, "towers"] = paste0("stim_set/",MyData[img, "towers"])
+}
+
+write.csv(MyData, "~/Desktop/ip_eyetracker/0_task/80data.csv", row.names = F)
+
+```
+
+``` {r}
+# move used images to stim_set folder
+
+all_images <- list.files("../../0_task/all_images")
+stim_set_dir = "../../0_task/stim_set"
+
+for (i in all_images){
+  for (j in 1:nrow(MyData)) {
+    if (i == MyData[j, "towers"]) {
+      file.copy(from = paste0("../../0_task/all_images/",i),
+          to = stim_set_dir)
+    }
+  }
+}
+
+```
+
+
+``` {r fig.width = 20, fig.height = 6}
+
+# set up psychometric curve
+
+PredData = NULL
+index <- c(1:80)
+percentage <- c(0,0,rep(0.05,5),rep(0.1,5),rep(0.15,4),rep(0.20,4),rep(0.25,4),rep(0.30,3),
+                
+                0.35,0.35,rep(0.4,3),rep(0.45,5),rep(0.5,6),rep(0.55,5),rep(0.60,3),0.65,0.65,
+                
+                rep(0.70,3),rep(0.75,4),rep(0.80,4),rep(0.85,4),rep(0.90,5),rep(0.95,5),1.00,1.00)
+
+PredData = cbind(index, percentage)
+PredData = data.frame(PredData)
+
+ggplot(PredData, aes(x = index, y = percentage)) + 
+  geom_point(size = 2) +
+  theme(panel.grid.major = element_blank(),
+      panel.grid.minor = element_blank(),
+      panel.background = element_blank(),
+      axis.line = element_line(colour = "black"),
+      axis.text.x  = element_text(angle=90, vjust = 0.5, hjust = 1, size=8,color="black"),
+      axis.text.y  = element_text(size=20,color="black"),
+      axis.title.x = element_blank(),
+      axis.title.y = element_blank(),
+      strip.background = element_blank())
+
+```
+
+``` {r fig.width = 20, fig.height = 6}
+ggplot(NewData, aes(x = stimulus, y = meanResponse)) +
+  geom_point(size = 2) +
+  theme(panel.grid.major = element_blank(),
+      panel.grid.minor = element_blank(),
+      panel.background = element_blank(),
+      axis.line = element_line(colour = "black"),
+      axis.text.x  = element_text(angle=90, vjust = 0.5, hjust = 1, size=8,color="black"),
+      axis.text.y  = element_text(size=20,color="black"),
+      axis.title.x = element_blank(),
+      axis.title.y = element_blank(),
+      strip.background = element_blank())
+
+```
+
+``` {r fig.width = 10, fig.height = 6}
+ggplot(StandDataset, aes(x = stimulus, y = meanResponse)) + 
+  geom_point(size = 1) +
+  theme(panel.grid.major = element_blank(),
+      panel.grid.minor = element_blank(),
+      panel.background = element_blank(),
+      axis.line = element_line(colour = "black"),
+      axis.text.x  = element_text(angle=90, vjust = 0.5, hjust = 1, size=6,color="black"),
+      axis.text.y  = element_text(size=20,color="black"),
+      axis.title.x = element_blank(),
+      axis.title.y = element_blank(),
+      strip.background = element_blank())
+
+```
+
+``` {r fig.width = 10, fig.height = 6}
+ggplot(AmbiDataset, aes(x = stimulus, y = meanResponse)) + 
+  geom_point(size = 1) +
+  theme(panel.grid.major = element_blank(),
+      panel.grid.minor = element_blank(),
+      panel.background = element_blank(),
+      axis.line = element_line(colour = "black"),
+      axis.text.x  = element_text(angle=90, vjust = 0.5, hjust = 1, size=6,color="black"),
+      axis.text.y  = element_text(size=20,color="black"),
+      axis.title.x = element_blank(),
+      axis.title.y = element_blank(),
+      strip.background = element_blank())
+
+```
+
+``` {r fig.width = 10, fig.height = 6}
+ggplot(FallDataset, aes(x = stimulus, y = meanResponse)) + 
+  geom_point(size = 1) +
+  theme(panel.grid.major = element_blank(),
+      panel.grid.minor = element_blank(),
+      panel.background = element_blank(),
+      axis.line = element_line(colour = "black"),
+      axis.text.x  = element_text(angle=90, vjust = 0.5, hjust = 1, size=6,color="black"),
+      axis.text.y  = element_text(size=20,color="black"),
+      axis.title.x = element_blank(),
+      axis.title.y = element_blank(),
+      strip.background = element_blank())
+
+```

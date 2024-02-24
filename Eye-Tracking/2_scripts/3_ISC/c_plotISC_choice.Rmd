@@ -1,0 +1,241 @@
+---
+title: "plotISC"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = FALSE)
+
+rm(list=ls())
+#####################################################################
+#                           Import Libraries                        #
+#####################################################################
+library("tidyr")
+library("dplyr")
+library("ggplot2")
+library("lme4")
+library("lmerTest")
+library("car")
+library("Hmisc")
+library("stringr")
+
+sem <- 
+  function(x) {sd(x,na.rm = T) / sqrt(length(x))}
+
+```
+
+``` {r}
+# Sub <- c(1016:1019, 1022:1024, 1027, 1031:1035, 1038:1045, 1048:1049, 1051, 1053:1055)
+#1050, 1037
+
+# YOU USED THESE SUBJECTS
+Sub <- c(1016, 1018, 1019, 1022:1024, 1027, 1031:1043)
+
+# data = read.csv('../../0_task/data.csv')
+data = read.csv('/Users/merieldoyle/Desktop/matlab_scripts/0_task/data.csv')
+
+d1 = NULL
+
+cat = NULL
+r = NULL
+type = NULL
+this_sub = NULL
+img_list = NULL
+stability = NULL
+Cat_n = NULL
+
+```
+
+``` {r}
+
+### THIS IS FINAL STEP IN NEXT FEW BLOCKS
+# d1 <- data.frame(cbind(img_list, this_sub, r, cat, type, stability))
+# colnames(d1) <- c("image", "sub", "r", "cat", "type", "stability")
+
+for (image in 1:nrow(data)) {
+
+  img_label = gsub("stim_set/", "", data[image, "towers"])
+  img_label = gsub(".png", "", img_label) # why add .png?
+  
+  # added this to convert data[image, "tower_type"] to character string
+  # cat_type = as.character(data[image, "tower_type"])
+    
+  within_stand_dir = paste0('../../3_results/1_et_processing/3_heatmaps/2_isc/isc_choice/choice_con/mot-neutral/image-', img_label, '/choice-stand/')
+  within_fall_dir = paste0('../../3_results/1_et_processing/3_heatmaps/2_isc/isc_choice/choice_con/mot-neutral/image-', img_label, '/choice-fall/')
+  
+  between_stand_dir = paste0('../../3_results/1_et_processing/3_heatmaps/2_isc/isc_choice/choice_incon/mot-neutral/image-', img_label, '/choice-stand/')
+  between_fall_dir = paste0('../../3_results/1_et_processing/3_heatmaps/2_isc/isc_choice/choice_incon/mot-neutral/image-', img_label, '/choice-fall/')
+  
+}
+
+```
+
+``` {r}
+
+# STAND_DIR
+
+for (image in 1:nrow(data)) {
+  
+  for (s in 1:length(Sub)) {
+    
+    sub = Sub[s]
+    
+    if (file.exists(paste0(within_stand_dir, sub, '.txt'))) {
+      
+      for (reps in 1:2) {
+        
+        img_list <- rbind(img_list, img_label) # i think first argument in rbind is the new name for the new df
+        this_sub <- rbind(this_sub, sub)
+        # cat <- rbind(cat, data[image, "tower_type"]) # doesn't seem to be adding tower_type to cat, changes cat to 1, 2, 3
+        # but data[image, "tower_type"] returns Ambi, Levels: Ambi, Fall, Stand
+        
+        # changed above to this
+        cat <- rbind(cat, cat_type)
+        
+        if (data[image, "corr_choice"] == "stand") {
+          stability <- rbind(stability, "fall")
+        } else if (data[image, "corr_choice"] == "fall"){
+          stability <- rbind(stability, "stand")
+        }
+        
+      }
+      
+      type <- rbind(type, "within")
+      r <- rbind(r, readLines(paste0(within_stand_dir, sub, '.txt')))
+      
+      type <- rbind(type, "between")
+      r <- rbind(r, readLines(paste0(between_stand_dir, sub, '.txt')))
+      
+    }
+  }
+}
+
+```
+
+``` {r}
+
+# FALL_DIR
+
+for (image in 1:nrow(data)) {
+  
+  for (s in 1:length(Sub)) {
+    
+    sub = Sub[s]
+    
+    # fall_dir
+    if (file.exists(paste0(within_fall_dir, sub, '.txt'))) {
+      
+      for (reps in 1:2) {
+        img_list <- rbind(img_list, img_label)
+        this_sub <- rbind(this_sub, sub)
+        # cat <- rbind(cat, data[image, "tower_type"])
+        cat <- rbind(cat, cat_type)
+        
+        if (data[image, "corr_choice"] == "stand") {
+          stability <- rbind(stability, "fall")
+        } else if (data[image, "corr_choice"] == "fall"){
+          stability <- rbind(stability, "stand")
+        }
+      }
+      
+      type <- rbind(type, "within")
+      r <- rbind(r, readLines(paste0(within_fall_dir, sub, '.txt')))
+     
+      type <- rbind(type, "between")
+      r <- rbind(r, readLines(paste0(between_fall_dir, sub, '.txt')))
+     
+    }
+  }
+}
+
+d1 <- data.frame(cbind(img_list, this_sub, r, cat, type, stability))
+colnames(d1) <- c("image", "sub", "r", "cat", "type", "stability")
+
+```
+
+``` {r}
+
+# write csv... had to manually make z_data file first
+
+write.csv(d1, "z_data/ISC_choice.csv", row.names = F)
+
+```
+
+```{r}
+
+d1$sub = factor(d1$sub)
+d1$cat = factor(d1$cat, levels = c('Fall','Ambi','Stand')) # this line got rid of 1, 2, 3 levels and replaced with N/A
+# d1$cat = factor(d1$cat, levels = c('2', '1', '3')) # replaced above with this, where 'Ambi' = 1, 'Fall' = 2, 'Stand' = 3
+d1$type = factor(d1$type, levels = c('within','between'))
+
+d2 <- d1 %>% 
+  group_by(cat, sub,type) %>%
+  dplyr::summarise(r = mean(as.numeric(r)))
+
+```
+
+#### Plot within and between group similarity
+
+``` {r}
+
+myPalette <- c("#4daf4a","#984ea3","#984ea3") 
+
+GroupData = d1 %>% 
+    group_by(cat, type) %>%
+    dplyr::summarise(avg_r = mean(as.numeric(r)), sem_r = sem(as.numeric(r)))
+
+GroupData$type = as.factor(GroupData$type)
+GroupData$cat = as.factor(GroupData$cat)
+GroupData$avg_r = as.numeric(GroupData$avg_r)
+
+```
+
+
+#### Plot within and between group similarity
+
+``` {r echo = FALSE, warning=FALSE, message=FALSE, fig.width=9, fig.height=5, fig.align='center'}
+
+temp <- ggplot(d2, aes(x = type, y = r, color = type, group = sub))  + # type = within / between
+   geom_bar(aes(x = type, y = avg_r, group = NULL),
+            data = GroupData,
+            stat = "identity",
+            fill="white",
+            width = 0.3,
+            size = 1.2) +
+    geom_point(size = 3, alpha = 0.2) +
+    geom_line(color = 'black', size = 1, alpha = 0.2) +
+    geom_errorbar(aes(x = type, y = avg_r, ymin = avg_r-sem_r, ymax = avg_r+sem_r, color = type, group = NULL),
+                data = GroupData,
+                width = 0.2, size = 1) + 
+    scale_color_manual(values = myPalette) +
+  facet_wrap(~ cat) +
+    theme(legend.position="none",
+        panel.grid.major = element_blank(),
+        panel.grid.minor = element_blank(),
+        panel.background = element_blank(),
+        axis.line = element_line(color = "black"),
+        axis.text.x  = element_text(size=12,color="black"),
+        axis.text.y  = element_text(size=12,color="black"),
+        axis.title.x = element_blank(),
+        axis.title.y = element_blank(),
+        title = element_text(size=16),
+        strip.text.x = element_text(size = 14))
+temp
+
+```
+
+``` {r}
+
+# t.test(r ~ type, data = subset(d2, cat == "2"), paired = TRUE)
+# t.test(r ~ type, data = subset(d2, cat == "1"), paired = TRUE)
+# t.test(r ~ type, data = subset(d2, cat == "3"), paired = TRUE)
+
+# t.test(r ~ type, data = subset(d2, cat == "Fall"), paired = TRUE)
+# t.test(r ~ type, data = subset(d2, cat == "Ambi"), paired = TRUE)
+# t.test(r ~ type, data = subset(d2, cat == "Stand"), paired = TRUE)
+
+t.test(r ~ type, data = subset(d2, cat = "Fall"), paired = TRUE)
+t.test(r ~ type, data = subset(d2, cat = "Ambi"), paired = TRUE)
+t.test(r ~ type, data = subset(d2, cat = "Stand"), paired = TRUE)
+
+```

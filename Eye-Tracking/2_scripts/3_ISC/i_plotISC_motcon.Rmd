@@ -1,0 +1,172 @@
+---
+title: "plotISC"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = FALSE)
+
+rm(list=ls())
+
+#####################################################################
+#                           Import Libraries                        #
+#####################################################################
+library("tidyr")
+library("dplyr")
+library("ggplot2")
+library("lme4")
+library("lmerTest")
+library("car")
+library("Hmisc")
+library("stringr")
+
+sem <- 
+  function(x) {sd(x,na.rm = T) / sqrt(length(x))}
+
+```
+
+``` {r}
+# look at why 1056 produces NaNs
+Sub <- c(1016:1019, 1022:1024, 1027, 1031:1035, 1037:1039, 1041:1045, 1048:1051, 1053:1055)
+
+data = read.csv('../../0_task/data.csv')
+
+d1 = NULL
+
+cat = NULL
+r = NULL
+type = NULL
+this_sub = NULL
+img_list = NULL
+mot = NULL
+
+for (image in 1:nrow(data)) {
+
+  img_label = gsub("stim_set/", "", data[image, "towers"])
+  img_label = gsub(".png", "", img_label)
+    
+  within_motcon_dir = paste0('../../3_results/1_et_processing/3_heatmaps/2_isc/isc_mot_v2/mot_same/mot-con/image-', img_label, '.csv/')
+  within_motincon_dir = paste0('../../3_results/1_et_processing/3_heatmaps/2_isc/isc_mot_v2/mot_same/mot-incon/image-', img_label, '.csv/')
+  
+  between_motcon_dir = paste0('../../3_results/1_et_processing/3_heatmaps/2_isc/isc_mot_v2/mot_opp/mot-con/image-', img_label, '.csv/')
+  between_motincon_dir = paste0('../../3_results/1_et_processing/3_heatmaps/2_isc/isc_mot_v2/mot_opp/mot-incon/image-', img_label, '.csv/')
+  
+  for (s in 1:length(Sub)) {
+    
+    sub = Sub[s]
+    
+    if (file.exists(paste0(between_motcon_dir, sub, '.txt'))) {
+      if (file.exists(paste0(within_motcon_dir, sub, '.txt'))) {
+      
+        for (reps in 1:2) {
+          img_list <- rbind(img_list, data[image, "towers"])
+          this_sub <- rbind(this_sub, sub)
+          cat <- rbind(cat, data[image, "tower_type"])
+          mot <- rbind(mot, "MotCon")
+        }
+      
+        type <- rbind(type, "within")
+        r <- rbind(r, readLines(paste0(within_motcon_dir, sub, '.txt')))
+      
+        type <- rbind(type, "between")
+        r <- rbind(r, readLines(paste0(between_motcon_dir, sub, '.txt')))
+
+      }
+    }
+    
+    if (file.exists(paste0(between_motincon_dir, sub, '.txt'))) {
+      if (file.exists(paste0(within_motincon_dir, sub, '.txt'))) {
+      
+        for (reps in 1:2) {
+          img_list <- rbind(img_list, data[image, "towers"])
+          this_sub <- rbind(this_sub, sub)
+          cat <- rbind(cat, data[image, "tower_type"])
+          mot <- rbind(mot, "MotIncon")
+        }
+      
+        type <- rbind(type, "within")
+        r <- rbind(r, readLines(paste0(within_motincon_dir, sub, '.txt')))
+     
+        type <- rbind(type, "between")
+        r <- rbind(r, readLines(paste0(between_motincon_dir, sub, '.txt')))
+      }
+    }
+    
+  }
+}
+
+d1 <- data.frame(cbind(img_list, this_sub, r, cat, type, mot))
+colnames(d1) <- c("image", "sub", "r", "cat", "type", "mot")
+
+cat_n_data = read.csv('../../1_data/1_behav/AllData.csv')
+cat_n_data = cat_n_data[,c(4, 12)]
+colnames(cat_n_data )[1] ="image"
+cat_n_data = unique(cat_n_data)
+
+d1 <- d1 %>% inner_join(cat_n_data, by="image")
+write.csv(d1, "z_data/ISC_mot_v2.csv", row.names = F)
+
+```
+
+```{r}
+
+d1$sub = factor(d1$sub)
+d1$type = factor(d1$type, levels = c('within','between'))
+
+d2 <- d1 %>% 
+  group_by(sub,type, mot) %>%
+  dplyr::summarise(r = mean(as.numeric(r)))
+
+```
+
+#### Plot within and between group similarity
+
+``` {r}
+
+myPalette <- c("#4daf4a","#984ea3","#984ea3") 
+
+GroupData = d1 %>% 
+    group_by(type, mot) %>%
+    dplyr::summarise(avg_r = mean(as.numeric(r)), sem_r = sem(as.numeric(r)))
+
+GroupData$type = as.factor(GroupData$type)
+GroupData$avg_r = as.numeric(GroupData$avg_r)
+
+```
+
+``` {r echo = FALSE, warning=FALSE, message=FALSE, fig.width=9, fig.height=5, fig.align='center'}
+  
+temp <- ggplot(d2, aes(x = type, y = r, color = type, group = sub))  +
+   geom_bar(aes(x = type, y = avg_r, group = NULL),
+            data = GroupData,
+            stat = "identity",
+            fill="white",
+            width = 0.3,
+            size = 1.2) +
+    geom_point(size = 3, alpha = 0.2) +
+    geom_line(color = 'black', size = 1, alpha = 0.2) +
+    geom_errorbar(aes(x = type, y = avg_r, ymin = avg_r-sem_r, ymax = avg_r+sem_r, color = type, group = NULL),
+                data = GroupData,
+                width = 0.2, size = 1) + 
+    scale_color_manual(values = myPalette) +
+    facet_wrap(~ mot) +
+    theme(legend.position="none",
+        panel.grid.major = element_blank(),
+        panel.grid.minor = element_blank(),
+        panel.background = element_blank(),
+        axis.line = element_line(color = "black"),
+        axis.text.x  = element_text(size=12,color="black"),
+        axis.text.y  = element_text(size=12,color="black"),,
+        axis.title.x = element_blank(),
+        axis.title.y = element_blank(),
+        title = element_text(size=16),
+        strip.text.x = element_text(size = 14))
+temp
+
+```
+
+#### t-tests
+```{r}
+t.test(r ~ type, data = subset(d2, mot == "MotCon"), paired = TRUE)
+t.test(r ~ type, data = subset(d2, mot == "MotIncon"), paired = TRUE)
+```

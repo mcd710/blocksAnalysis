@@ -1,0 +1,520 @@
+---
+title: "PROLIFIC IP Curves"
+author: "Meriel Doyle"
+date: "2023-02-20"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+
+setwd(dirname(rstudioapi::getSourceEditorContext()$path))
+
+knitr::opts_chunk$set(echo = FALSE)
+
+rm(list = ls())
+
+#####################################################################
+#                           Import Libraries                        #
+#####################################################################
+library("tidyr")
+library("dplyr")
+library("ggplot2")
+library("lme4")
+library("lmerTest")
+library("car")
+library("Hmisc")
+library("stringr")
+
+sem <- 
+  function(x) {sd(x,na.rm = T) / sqrt(length(x))}
+
+```
+
+```{r}
+
+AllData = read.csv("../data/blocks_complete.csv")
+
+AllData = AllData[,-c(4)] 
+AllData = subset(AllData, response != "null")
+AllData = AllData[!is.na(AllData$"sub"),]
+
+AllData$sub = as.factor(AllData$sub)
+AllData$response = as.numeric(AllData$response)
+
+```
+
+```{r}
+neutral_data = subset(AllData, motivation == "neutral") %>%
+  group_by(stimulus) %>%
+  dplyr::summarise(Cat_n = mean(response) * 100)
+
+neutral_data$ranked_ntile = ntile(neutral_data$Cat_n, 8)
+
+# for all images
+AllData <- AllData %>% 
+  inner_join(neutral_data, by = "stimulus")
+
+# find pStand per subject
+thisdata <- subset(AllData, motivation == "neutral") %>%
+  group_by(sub) %>%
+  dplyr::summarise(pStand = mean(response))
+
+# divide the participants where p(Stand) > 0.5 and p(Stand) < 0.5
+Bin_Data = AllData %>%
+  group_by(ranked_ntile) %>%
+  dplyr::summarise(bin_Cat_n = mean(response) * 100)
+
+AllData <- AllData %>% 
+  inner_join(Bin_Data, by = "ranked_ntile")
+
+tempdata <- thisdata %>% 
+  filter(pStand > 0.5) %>%
+  mutate(pStand_group = "> 0.5")
+
+tempdata2 <- thisdata %>% 
+  filter(pStand < 0.5) %>%
+  mutate(pStand_group = "< 0.5")
+
+pStand_group = rbind(tempdata, tempdata2)
+pStand_group = pStand_group[,-c(2)]
+
+thisdata <- thisdata %>% inner_join(pStand_group, by = "sub")
+AllData <- AllData %>% inner_join(pStand_group, by = "sub")
+
+```
+
+```{r}
+
+WholeData = AllData
+WholeData$motivation = relevel(factor(WholeData$motivation), ref = "neutral")
+
+res_cat_n = glmer(
+  response ~ Cat_n + motivation + (motivation|sub), 
+  WholeData, family = binomial(link = "logit"), 
+  control = glmerControl(calc.derivs = FALSE)
+  )
+
+summary(res_cat_n)
+
+```
+
+```{r}
+
+# create predicted dataset
+
+res_coef_whole = coef(summary(res_cat_n))
+
+intercept = res_coef_whole[1,1]
+Cat_n = res_coef_whole[2,1]
+Fall_est = res_coef_whole[3,1]
+Stand_est = res_coef_whole[4,1]
+
+pred.data_whole = data.frame(stim_n = rep(seq(0, 100, len = 101), 3),
+                            condition = c(rep("neutral", 101),
+                                          rep("fall", 101),
+                                          rep("stand", 101)))
+
+pred.data_whole$response = 
+  ifelse(pred.data_whole$condition == "neutral", 1/(1 + exp(-(intercept + Cat_n * 
+                                                               pred.data_whole$stim_n))),
+  ifelse(pred.data_whole$condition == "fall", 1/(1 + exp(-(intercept + Cat_n * 
+                                                            pred.data_whole$stim_n + Fall_est))), 
+                          1/(1 + exp(-(intercept + Cat_n * pred.data_whole$stim_n + Stand_est)))))
+
+sub_avg_whole <- WholeData %>% 
+  group_by(sub, Cat_n, motivation) %>% 
+  dplyr::summarise(Avg = mean(response))
+
+```
+
+```{r}
+
+group.colors <- c(stand="#4C72B0", fall="#C44E52", neutral="#000000")
+
+plot.behav = ggplot() +
+  stat_summary(data = sub_avg_whole, aes(x = Cat_n, y = Avg, color =  motivation),
+               fun.data = mean_cl_normal, geom = "errorbar", width = 1,
+               fun.args = list(mult = 1), alpha = 1) +
+  stat_summary(data = sub_avg_whole, aes(x = Cat_n, y = Avg, color = motivation),
+               fun.y = mean, geom = "point", size = 2.5, alpha = 1) +
+  geom_line(data = pred.data_whole, aes(x = stim_n, y = response, color = condition), size = 1, alpha = 1) + 
+  theme(legend.position = "none",
+        panel.grid.major = element_blank(),
+        panel.grid.minor = element_blank(),
+        panel.background = element_blank(),
+        axis.line = element_line(color = "black"),
+        axis.text.x = element_text(size = 13, color = "black"),
+        axis.text.y  = element_text(size=13,color="black"),
+        axis.title.x = element_text(size=15),
+        axis.title.y = element_text(size=15),
+        strip.background = element_blank(),
+        strip.text.x = element_text(face = "bold", size = 15)) +
+  xlab("% Stand") + ylab("P(Respond Stand)") +
+  scale_colour_manual(values=group.colors)
+
+plot.behav
+
+```
+
+``` {r}
+
+group.colors <- c("> 0.5" = "#4C72B0", "< 0.5" = "#C44E52")
+
+ggplot(thisdata, aes(x=pStand_group, fill = pStand_group)) + geom_bar() +
+  theme(legend.position="none",
+      panel.grid.major = element_blank(), 
+        panel.grid.minor = element_blank(),
+        panel.background = element_blank(), 
+        axis.line = element_line(colour = "black"),
+        axis.text.x  = element_text(size=13,color="black"),
+        axis.text.y  = element_text(size=13,color="black"),
+        axis.title.x = element_text(size=15), 
+        axis.title.y = element_text(size=15),
+        strip.background = element_blank(),
+        strip.text.x = element_text(face = "bold", size = 15)) +
+  xlab("P(Stand)") +
+  ylab("Number of Subjects") +
+  scale_colour_manual(values=group.colors) +
+  scale_fill_manual(values=group.colors)
+
+```
+
+```{r}
+
+FallBiasData = subset(AllData, pStand_group == "< 0.5")
+FallBiasData$motivation = relevel(factor(FallBiasData$motivation), ref = "neutral")
+
+res_cat_n_fall = glmer(
+  response ~ Cat_n + motivation + (motivation|sub), 
+  FallBiasData, family = binomial(link = "logit"), 
+  control = glmerControl(calc.derivs = FALSE)
+  )
+
+summary(res_cat_n_fall)
+
+```
+
+```{r}
+
+# create predicted dataset
+
+res_coef_fall = coef(summary(res_cat_n_fall))
+
+intercept = res_coef_fall[1,1]
+Cat_n = res_coef_fall[2,1]
+Fall_est = res_coef_fall[3,1]
+Stand_est = res_coef_fall[4,1]
+
+pred.data_fall = data.frame(stim_n = rep(seq(0, 100, len = 101), 3),
+                            condition = c(rep("neutral", 101),
+                                          rep("fall", 101),
+                                          rep("stand", 101)))
+
+pred.data_fall$response = 
+  ifelse(pred.data_fall$condition == "neutral", 1/(1 + exp(-(intercept + Cat_n * 
+                                                               pred.data_fall$stim_n))),
+  ifelse(pred.data_fall$condition == "fall", 1/(1 + exp(-(intercept + Cat_n * 
+                                                            pred.data_fall$stim_n + Fall_est))), 
+                          1/(1 + exp(-(intercept + Cat_n * pred.data_fall$stim_n + Stand_est)))))
+
+sub_avg_fall <- FallBiasData %>% 
+  group_by(sub, Cat_n, motivation) %>% 
+  dplyr::summarise(Avg = mean(response))
+
+```
+
+```{r}
+
+group.colors <- c(stand="#4C72B0", fall="#C44E52", neutral="#000000")
+
+plot.behav = ggplot() +
+  stat_summary(data = sub_avg_fall, aes(x = Cat_n, y = Avg, color =  motivation),
+               fun.data = mean_cl_normal, geom = "errorbar", width = 1,
+               fun.args = list(mult = 1), alpha = 1) +
+  stat_summary(data = sub_avg_fall, aes(x = Cat_n, y = Avg, color = motivation),
+               fun.y = mean, geom = "point", size = 2.5, alpha = 1) +
+  geom_line(data = pred.data_fall, aes(x = stim_n, y = response, color = condition), size = 1, alpha = 1) + 
+  theme(legend.position = "none",
+        panel.grid.major = element_blank(),
+        panel.grid.minor = element_blank(),
+        panel.background = element_blank(),
+        axis.line = element_line(color = "black"),
+        axis.text.x = element_text(size = 13, color = "black"),
+        axis.text.y  = element_text(size=13,color="black"),
+        axis.title.x = element_text(size=15),
+        axis.title.y = element_text(size=15),
+        strip.background = element_blank(),
+        strip.text.x = element_text(face = "bold", size = 15)) +
+  xlab("% Stand") + ylab("P(Respond Stand)") +
+  scale_colour_manual(values=group.colors)
+
+plot.behav
+
+```
+CURVE FOR P(STAND) > 0.5
+
+```{r}
+
+StandBiasData = subset(AllData, pStand_group == "> 0.5")
+StandBiasData$motivation = relevel(factor(StandBiasData$motivation), ref="neutral")
+
+res_cat_n_stand = glmer(response ~ Cat_n + motivation + (motivation|sub), StandBiasData, 
+              family = binomial(link="logit"), control = glmerControl(calc.derivs = FALSE))
+  
+summary(res_cat_n_stand)
+
+```
+
+```{r}
+
+# create predicted dataset
+
+res_coef_stand = coef(summary(res_cat_n_stand))
+
+intercept = res_coef_stand[1,1]
+Cat_n = res_coef_stand[2,1]
+Fall_est = res_coef_stand[3,1]
+Stand_est = res_coef_stand[4,1]
+
+pred.data_stand = data.frame(stim_n = rep(seq(0, 100, len = 101), 3),
+                       condition = c(rep("fall",101), rep("neutral",101), rep("stand",101)))
+
+pred.data_stand$response= ifelse(pred.data_stand$condition == "neutral", 1/(1 + exp(-(intercept + Cat_n * pred.data_stand$stim_n))),
+                    ifelse(pred.data_stand$condition == "fall", 1/(1 + exp(-(intercept + Cat_n * pred.data_stand$stim_n + Fall_est))),
+                        1/(1 + exp(-(intercept + Cat_n * pred.data_stand$stim_n + Stand_est)))))
+
+sub_avg_stand <- StandBiasData %>% 
+  group_by(sub, Cat_n, motivation) %>% 
+  dplyr::summarise(Avg = mean(response))
+
+```
+
+```{r}
+
+plot.behav = ggplot() +
+  stat_summary(data = sub_avg_stand, aes(x=Cat_n, y=Avg, color = motivation),
+               fun.data = mean_cl_normal, geom = "errorbar", width=1,
+               fun.args = list(mult = 1), alpha = 1) + 
+  stat_summary(data = sub_avg_stand, aes(x=Cat_n, y=Avg, color = motivation),
+               fun.y=mean,geom="point", size=2.5, alpha = 1) +
+  geom_line(data = pred.data_stand, aes(x=stim_n, y=response, color = condition), size=1, alpha = 1) +
+  theme(legend.position="none",
+      panel.grid.major = element_blank(), 
+        panel.grid.minor = element_blank(),
+        panel.background = element_blank(), 
+        axis.line = element_line(colour = "black"),
+        axis.text.x  = element_text(size=13,color="black"),
+        axis.text.y  = element_text(size=13,color="black"),
+        axis.title.x = element_text(size=15),
+        axis.title.y = element_text(size=15),
+        strip.background = element_blank(),
+        strip.text.x = element_text(face = "bold", size = 15)) +
+  xlab("% Stand") + ylab("P(Respond Stand)") +
+  scale_colour_manual(values=group.colors)
+
+plot.behav
+
+```
+
+#####################################################################
+#                              BIN DATA                             #
+#####################################################################
+
+
+```{r}
+WholeData = AllData
+WholeData$motivation = relevel(factor(WholeData$motivation), ref = "neutral")
+
+res_cat_n = glmer(
+  response ~ bin_Cat_n + motivation + (motivation|sub), 
+  WholeData, family = binomial(link = "logit"), 
+  control = glmerControl(calc.derivs = FALSE)
+  )
+
+summary(res_cat_n)
+```
+
+``` {r}
+
+# create predicted dataset
+
+res_coef_whole = coef(summary(res_cat_n))
+
+intercept = res_coef_whole[1,1]
+Cat_n = res_coef_whole[2,1]
+Fall_est = res_coef_whole[3,1]
+Stand_est = res_coef_whole[4,1]
+
+pred.data_whole = data.frame(stim_n = rep(seq(0, 100, len = 101), 3),
+                       condition = c(rep("neutral",101), rep("fall",101), rep("stand",101)))
+
+pred.data_whole$response= ifelse(pred.data_fall$condition == "neutral", 1/(1 + exp(-(intercept + Cat_n * pred.data_whole$stim_n))),
+                    ifelse(pred.data_fall$condition == "fall", 1/(1 + exp(-(intercept + Cat_n * pred.data_whole$stim_n + Fall_est))),
+                        1/(1 + exp(-(intercept + Cat_n * pred.data_fall$stim_n + Stand_est)))))
+
+sub_avg_whole <- WholeData %>% 
+  group_by(sub, bin_Cat_n, motivation) %>% 
+  dplyr::summarise(Avg = mean(response))
+
+```
+
+```{r}
+
+group.colors <- c(stand="#4C72B0", fall="#C44E52", neutral="#000000")
+
+plot.behav = ggplot() +
+  stat_summary(data = sub_avg_whole, aes(x=bin_Cat_n, y=Avg, color = motivation),
+               fun.data = mean_cl_normal, geom = "errorbar", width=1,
+               fun.args = list(mult = 1), alpha = 1) + 
+  stat_summary(data = sub_avg_whole, aes(x=bin_Cat_n, y=Avg, color = motivation),
+               fun.y=mean,geom="point", size=2.5, alpha = 1) +
+  geom_line(data = pred.data_whole, aes(x=stim_n, y=response, color = condition), size=1, alpha = 1) +
+  theme(legend.position="none",
+      panel.grid.major = element_blank(), 
+        panel.grid.minor = element_blank(),
+        panel.background = element_blank(), 
+        axis.line = element_line(colour = "black"),
+        axis.text.x  = element_text(size=13,color="black"),
+        axis.text.y  = element_text(size=13,color="black"),
+        axis.title.x = element_text(size=15),
+        axis.title.y = element_text(size=15),
+        strip.background = element_blank(),
+        strip.text.x = element_text(face = "bold", size = 15)) +
+  xlab("% Stand") + ylab("P(Respond Stand)") +
+  scale_colour_manual(values=group.colors)
+
+plot.behav
+
+```
+
+CURvE FOR P(STAND) < 0.5
+
+``` {r}
+
+FallBiasData = subset(AllData, pStand_group == "< 0.5")
+FallBiasData$motivation = relevel(factor(FallBiasData$motivation), ref="neutral")
+
+res_cat_n_fall = glmer(response ~ bin_Cat_n + motivation + (motivation|sub), FallBiasData, 
+              family = binomial(link="logit"), control = glmerControl(calc.derivs = FALSE))
+
+summary(res_cat_n_fall)
+
+```
+
+``` {r}
+
+# create predicted dataset
+
+res_coef_fall = coef(summary(res_cat_n_fall))
+
+intercept = res_coef_fall[1,1]
+Cat_n = res_coef_fall[2,1]
+Fall_est = res_coef_fall[3,1]
+Stand_est = res_coef_fall[4,1]
+
+pred.data_fall = data.frame(stim_n = rep(seq(0, 100, len = 101), 3),
+                       condition = c(rep("neutral",101), rep("fall",101), rep("stand",101)))
+
+pred.data_fall$response= ifelse(pred.data_fall$condition == "neutral", 1/(1 + exp(-(intercept + Cat_n * pred.data_fall$stim_n))),
+                    ifelse(pred.data_fall$condition == "fall", 1/(1 + exp(-(intercept + Cat_n * pred.data_fall$stim_n + Fall_est))),
+                        1/(1 + exp(-(intercept + Cat_n * pred.data_fall$stim_n + Stand_est)))))
+
+sub_avg_fall <- FallBiasData %>% 
+  group_by(sub, bin_Cat_n, motivation) %>% 
+  dplyr::summarise(Avg = mean(response))
+
+```
+
+``` {r}
+
+group.colors <- c(stand="#4C72B0", fall="#C44E52", neutral="#000000")
+
+plot.behav = ggplot() +
+  stat_summary(data = sub_avg_fall, aes(x=bin_Cat_n, y=Avg, color = motivation),
+               fun.data = mean_cl_normal, geom = "errorbar", width=1,
+               fun.args = list(mult = 1), alpha = 1) + 
+  stat_summary(data = sub_avg_fall, aes(x=bin_Cat_n, y=Avg, color = motivation),
+               fun.y=mean,geom="point", size=2.5, alpha = 1) +
+  geom_line(data = pred.data_fall, aes(x=stim_n, y=response, color = condition), size=1, alpha = 1) +
+  theme(legend.position="none",
+      panel.grid.major = element_blank(), 
+        panel.grid.minor = element_blank(),
+        panel.background = element_blank(), 
+        axis.line = element_line(colour = "black"),
+        axis.text.x  = element_text(size=13,color="black"),
+        axis.text.y  = element_text(size=13,color="black"),
+        axis.title.x = element_text(size=15),
+        axis.title.y = element_text(size=15),
+        strip.background = element_blank(),
+        strip.text.x = element_text(face = "bold", size = 15)) +
+  xlab("% Stand") + ylab("P(Respond Stand)") +
+  scale_colour_manual(values=group.colors)
+
+plot.behav
+
+```
+
+``` {r}
+
+StandBiasData = subset(AllData, pStand_group == "> 0.5")
+StandBiasData$motivation = relevel(factor(StandBiasData$motivation), ref="neutral")
+
+res_cat_n_stand = glmer(response ~ bin_Cat_n + motivation + (motivation|sub), StandBiasData, 
+              family = binomial(link="logit"), control = glmerControl(calc.derivs = FALSE))
+  
+summary(res_cat_n_stand)
+
+```
+
+``` {r}
+
+# create predicted dataset
+
+res_coef_stand = coef(summary(res_cat_n_stand))
+
+intercept = res_coef_stand[1,1]
+Cat_n = res_coef_stand[2,1]
+Fall_est = res_coef_stand[3,1]
+Stand_est = res_coef_stand[4,1]
+
+pred.data_stand = data.frame(stim_n = rep(seq(0, 100, len = 101), 3),
+                       condition = c(rep("fall",101), rep("neutral",101), rep("stand",101)))
+
+pred.data_stand$response= ifelse(pred.data_stand$condition == "neutral", 1/(1 + exp(-(intercept + Cat_n * pred.data_stand$stim_n))),
+                    ifelse(pred.data_stand$condition == "fall", 1/(1 + exp(-(intercept + Cat_n * pred.data_stand$stim_n + Fall_est))),
+                        1/(1 + exp(-(intercept + Cat_n * pred.data_stand$stim_n + Stand_est)))))
+
+sub_avg_stand <- StandBiasData %>% 
+  group_by(sub, bin_Cat_n, motivation) %>% 
+  dplyr::summarise(Avg = mean(response))
+
+```
+
+``` {r}
+
+plot.behav = ggplot() +
+  stat_summary(data = sub_avg_stand, aes(x=bin_Cat_n, y=Avg, color = motivation),
+               fun.data = mean_cl_normal, geom = "errorbar", width=1,
+               fun.args = list(mult = 1), alpha = 1) + 
+  stat_summary(data = sub_avg_stand, aes(x=bin_Cat_n, y=Avg, color = motivation),
+               fun.y=mean,geom="point", size=2.5, alpha = 1) +
+  geom_line(data = pred.data_stand, aes(x=stim_n, y=response, color = condition), size=1, alpha = 1) +
+  theme(legend.position="none",
+      panel.grid.major = element_blank(), 
+        panel.grid.minor = element_blank(),
+        panel.background = element_blank(), 
+        axis.line = element_line(colour = "black"),
+        axis.text.x  = element_text(size=13,color="black"),
+        axis.text.y  = element_text(size=13,color="black"),
+        axis.title.x = element_text(size=15),
+        axis.title.y = element_text(size=15),
+        strip.background = element_blank(),
+        strip.text.x = element_text(face = "bold", size = 15)) +
+  xlab("% Stand") + ylab("P(Respond Stand)") +
+  scale_colour_manual(values=group.colors)
+
+plot.behav
+
+```
+
+
